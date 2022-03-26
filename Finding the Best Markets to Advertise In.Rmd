@@ -1,0 +1,446 @@
+---
+title: "Finding the Best Markets to Advertise In"
+author: "Sofiane Ikkour"
+output: html_document
+---
+
+
+#### **Context:**
+
+An e-learning company offers courses on programming. Most of the courses are on web and mobile development, but also cover many other domains, like data science, game development, etc. 
+
+#### **Goal:**
+
+We want to promote the company's product and we'd like to invest some money in advertisement. Our goal in this project is to find out the two best markets to advertise the company's product in.
+
+#### **Dataset:**
+
+We'll work on a survey data dated from 2017 which is publicly available in this [Github repository](https://github.com/freeCodeCamp/2017-new-coder-survey/tree/master/clean-data). We'll use this dataset for our examples.
+
+
+**Note:** This code was written on RStudio.  
+**Language:** R.  
+**Packages:** readr, dplyr, stringr, tidyr, ggplot2.  
+
+**Load and explore the data**
+
+```{r}
+# load the relevant libraries
+library(readr)
+library(dplyr)
+library(stringr)
+library(tidyr)
+library(ggplot2)
+
+# set the working directory
+setwd("C:/Users/Aylan/Documents/IT/DataQuest/R/Finding the Best Markets to Advertise In")
+
+# read the dataset
+survey_data <- read_csv("2017-fCC-New-Coders-Survey-Data.csv", col_types = cols())
+
+# display the first ten rows
+head(survey_data, 10)
+```
+
+```{r}
+# print the dimension of the dataset
+print(dim(survey_data))
+
+# print the number of NA values
+print(sum(is.na(survey_data)))
+```
+
+We have a large dataset with 18175 rows and 136 columns. The dataset has also a large number of missing values.
+
+**Discussion:**
+
+To reach our goal, we could organize for a couple of different markets to find out which would be the best choices for advertising.  
+we can try searching existing data which might be relevant for our purpose. One good candidate is the data from freeCodeCamp's New Coder Survey which you can access via [this link](https://www.freecodecamp.org/news/we-asked-20-000-people-who-they-are-and-how-theyre-learning-to-code-fff5d668969).  
+
+**Check if the data is representative for our population**
+
+For the purpose of our analysis, we want to answer questions about a population of new coders that are interested in the subjects proposed on the company's platform. We'd like to highlight:  
+
+- Where are these new coders located.  
+- What are the locations with the greatest number of new coders.  
+- How much money new coders are willing to spend on learning.  
+
+In this section, we need to clarify whether the sample data we have is representative for our population of interest and it has the right categories of people for our purpose.
+
+Looking at more closely at the dataset, we can spot the "JobRoleInterest" column which describes the job role each new candidate is interested in. We'll take a look at the frequency distribution of this column and see if the data is relevant.
+
+```{r}
+# create a frequency distribution table for the "JobRoleInterest" column
+job_role_interest <- survey_data %>%
+  group_by(JobRoleInterest) %>%
+  summarize(Proportion = n() / nrow(survey_data),
+            Percentage = n() / nrow(survey_data)) %>%
+  arrange(desc(Percentage))
+
+# display the frequency distribution table
+head(job_role_interest, 200)
+```
+
+**Observations:**
+
+From a quick analysis of the distribution table, we can notice the following:  
+- Many candidates are interested in web development.  
+- A few people are interested in mobile development.  
+- Less people are interested in domains other than web and mobile development.  
+- We can also notice that many candidates are interested in more than one subject.  
+
+Our next task consists in splitting each row content of the "JobRoleInterest" column containing more than one subject.  
+
+```{r}
+# split each row content of the "JobRoleInterest" column containing more than one subject
+split_role_interest <- survey_data %>%
+  select(JobRoleInterest) %>%
+  drop_na %>% # drop all the missing values
+  rowwise %>% 
+  mutate(job_role = length(str_split(JobRoleInterest, ",")[[1]]))
+
+# print some rows
+head(split_role_interest)
+```
+
+```{r}
+# now we create a frequency table that display the number of options in the job_role column
+number_options <- split_role_interest %>%
+  ungroup() %>% # reverse the rowwise() function (we used before) effect
+  group_by(job_role) %>%
+  summarize(Freq_percentage = n() / nrow(split_role_interest) * 100)
+
+# display the frequency table
+head(number_options)
+```
+
+**Observations:**
+
+The frequency table above shows that only 31.65% of the participants are interested in only one job role, while the majority of the participants are interested in more than one job role. 
+
+The focus of our work in on web and mobile development, so next we will investigate how many people are interested in at least one of these options.
+
+```{r}
+# create a frequency table to show the frequencies of the the web and mobile developement options
+web_mobile <- str_detect(survey_data$JobRoleInterest, "Web Developer|Mobile Developer")
+freq_tab <- table(web_mobile)
+freq_tab <- freq_tab * 100 / sum(freq_tab)
+
+# create a dataframe that displays the two cases 
+freq_tab <- tibble(x = c("Other subjects", "Web or mobile developer"), 
+                   y = freq_tab)
+
+# create a histogram to show the same results
+ggplot(data = freq_tab,
+       aes(x = x, y = y, fill = x)) +
+  geom_histogram(stat = "identity")
+```
+
+**Insights:**
+
+- The figure shows that about 85% of the participants are interested in mobile and web development.   - We can consider this sample as representative of our population of interest given the observations.  
+- We aim at advertising the company's courses in all types of programming but mostly in web and mobile development.  
+
+Let's recall that our goal is to find the best markets to advertise the company's courses in. So we need to look at these questions:
+
+- Where are these new coders located.  
+- What are the locations with the greatest number of new coders.  
+- How much money new coders are willing to spend on learning.  
+
+**Find where the new coders are located**
+
+Our job here is to find out where the new coders are located, and what are the densities (how many coders there are) for each location.  
+The dataset provides information about each participant at a country level. The CountryCitizen variable provides information about each participant's origin, and the CountryLive variable describes the country each participant lives in.  
+We'll work with CountryLive variable because we're interested in where people actually live at the time we run the ads. In other words, we're interested in where people are located not where they're born.  
+We can start by examining the frequency distribution of the CountryLive variable, but we'll only examine the participants who answered what role they're interested in in order to make sure to work with a representative sample.  
+
+```{r}
+# isolate the participants who answered what role they're interested in by dropping all NA values
+participants_isolated <- survey_data %>%
+  drop_na(JobRoleInterest)
+
+# create a frequency distribution table of the CountryLive variable
+freq_tab_countrylive <- participants_isolated %>%
+  group_by(CountryLive) %>%
+  summarize(Freq_percentage = n() / nrow(participants_isolated) * 100) %>%
+  arrange(desc(Freq_percentage))
+
+# display the frequency distribution table
+head(freq_tab_countrylive, 200)
+```
+
+**Insights:**
+
+- 44.69% of the participants are located in The United States of America. This seems to be an interesting market.
+- The second biggest market is India which represents only 7.55% of the participants. It is followed by The United Kingdom with 4.5% and Canada with 3.72%. 
+
+This is indeed useful information but we need to know how much money participants are willing to spend because advertising in markets in which most of people want to learn for free won't be profitable for us.
+
+**Money spent for learning**
+
+In this step, we aim at calculating the average money spent by each student.  
+The MoneyForLearning column describes in American dollars the amount of money participants spent from the moment they started coding until the moment they completed the survey. The company sells subscriptions of $59 per month, and we're interested in finding out how much money each student spends per month.  
+Our analysis will be narrowed to only four countries: USA, India, The United Kingdom and Canada. The reasons for this decision are:  
+- These are countries having the highest absolute frequencies in our sample, which means we have a decent amount of data for each.  
+- The courses are written in English, and English is an official language in all these four countries. The more people that know English, the better our chances are to target the right people with our ads.
+
+We'll start by creating a new column that describes the amount of money each student spends each month. To do that, we need to divide the MoneyForlearning column by the MonthsProgramming column. The problem is that some participants answered by 0 month suggesting that they just started the program. To solve this problem, we need to replace 0s by 1s in the MonthsProgramming column.
+
+```{r}
+# replace 0s by 1s in the MonthsProgramming column
+participants_isolated$MonthsProgramming <- str_replace(participants_isolated$MonthsProgramming, "0", "1")
+participants_isolated$MonthsProgramming <- as.numeric(participants_isolated$MonthsProgramming)
+
+# create a new column that describes the amount of money each student spends per month
+participants_isolated <- participants_isolated %>%
+  mutate(money_per_month = MoneyForLearning / MonthsProgramming)
+
+# calculate the number of NA values there are in the money_per_month column
+na_count <- sum(is.na(participants_isolated$money_per_month))
+
+# print na_count
+na_count
+```
+
+```{r}
+# drop all missing values from the money_per_month column
+participants_isolated <- participants_isolated %>%
+  drop_na(money_per_month)
+
+# we want to group the data by the CountryLive column and calculate the average money spent by each customer per month
+# first, let's remove the NA values from the CountryLive column and check if we still have enough data to work with
+participants_isolated <- participants_isolated %>%
+  drop_na(CountryLive)
+
+# create a frequency table to check if we still have enough values in the CountryLive column
+freq_tab_countrylive <- participants_isolated %>%
+  group_by(CountryLive) %>%
+  summarize(Freq = n()) %>%
+  arrange(desc(Freq))
+
+# display the frequency table
+head(freq_tab_countrylive)
+```
+
+```{r}
+# the table shows that there is enough data to work with
+# let's compute the average money spent by each student per month for each of the four countries
+avg_countries <- participants_isolated %>%
+  filter(CountryLive == "United States of America" | CountryLive == "India" | CountryLive == "United Kingdom" | CountryLive == "Canada") %>%
+  group_by(CountryLive) %>%
+  summarize(average_money_spent = mean(money_per_month)) %>%
+  arrange(desc(average_money_spent))
+
+# display the avg_countries table
+head(avg_countries)
+```
+
+**Insights:**
+
+The results for Canada and the United Kingdom are a bit surprising relative to India considering that the GDP per capita is higher in Canada and the United Kingdom than in India. We'd normally expect that students from Canada and the United Kingdom would spend more money on learning than students from India.  
+One thing we can suspect is the presence of extreme outliers making the mean too big for India, or too low for Canada and the UK.
+
+**Verify the presence of outliers**
+
+To verify the presence of outliers we create a boxplot in order to visualize the distribution of the money_per_month variable for the four countries.
+
+```{r}
+# filter the original dataset to have only data for the US, the UK, India, and Canada
+countries_4 <- participants_isolated %>%
+  filter(CountryLive == "United States of America" | CountryLive == "India" | CountryLive == "United Kingdom" | CountryLive == "Canada")
+
+# reset the index column using the row_number() function
+countries_4 <- countries_4 %>%
+  mutate(index = row_number())
+
+# generate a boxplot that shows the distribution of the money_per_month variable
+ggplot(data = countries_4,
+       aes(x = CountryLive, y = money_per_month, fill = CountryLive)) +
+  geom_boxplot() +
+  labs(
+    title = "money_per_month distribution",
+    x = "Country",
+    y = "Money spent per month"
+  )
+```
+
+**Observations:**
+
+The boxplot shows the presence of outliers for the four countries, but the US has extreme outliers suggesting that especially two students spend $50,000 or more per month. The data needs to be filtered to conserve only the values lower than 20,000 USD.
+
+```{r}
+# filter the money_per_month variable and take only the values lower than $20,000
+countries_4 <- countries_4 %>%
+  filter(money_per_month < 20000)
+
+# reset the index column using the row_number() function
+countries_4 <- countries_4 %>%
+  mutate(index = row_number())
+
+# generate a new boxplot that shows the distribution of the money_per_month variable
+ggplot(data = countries_4,
+       aes(x = CountryLive, y = money_per_month, fill = CountryLive)) +
+  geom_boxplot() +
+  labs(
+    title = "money_per_month distribution",
+    x = "Country",
+    y = "Money spent per month"
+  )
+```
+
+It seems that India has some extreme outliers that need to be investigated. Let's isolate every value higher than $2500. From the graph we see that this corresponds to four values or outliers.
+
+```{r}
+# filter the CountryLive and money_per_month variables to have only India and values higher than $2500
+only_india <- countries_4 %>%
+  select(CountryLive, AttendedBootcamp, JobApplyWhen, money_per_month, index) %>%
+  filter(CountryLive == "India" & money_per_month >= 2500) %>%
+  arrange(desc(money_per_month))
+
+# print the result
+head(only_india, 10)
+```
+
+It seems that these participants did not attend a bootcamp. In general, it's not obvious to figure out if these participants really spent that much money. For me, it's better to remove these outliers.
+
+```{r}
+# remove the outliers higher than 2500 for India
+countries_4 <- countries_4 %>%
+  filter(!(index %in% only_india$index))
+```
+
+The boxplot shows that the US still has some extreme outliers, students who spend more than $5000. Let's filter again and isolate the values higher than 5000.
+
+```{r}
+# filter the countries_4 dataframe to isolate the values of money_per_month higher than 5000 for the US
+us_only <- countries_4 %>%
+  filter(CountryLive == "United States of America" & money_per_month >= 5000) %>%
+  arrange(desc(money_per_month))
+
+# display the result
+head(us_only, 20)
+```
+
+The results show that 5 of the participants did not attend a bootcamp. So it's hard to explain why they spent that much money on a program they did not attend. Also, for the participants who attended a bootcamp still spent high amount of money that cannot be explained easily. The best action we can make here is to remove all these outliers.
+
+```{r}
+# remove all outliers of the us_only dataframe
+countries_4 <- countries_4 %>%
+  filter(!(index %in% us_only$index))
+```
+
+In the next code block, we will remove all the respondents who:  
+- Did not attend a bootcamp.  
+- Spent three months or less in programming from when they completed the survey.
+
+```{r}
+# remove all the respondents who did not attend a bootcamp
+no_bootcamp <- countries_4 %>%
+  filter(CountryLive == "United States of America" &
+           AttendedBootcamp == 1 &
+           money_per_month >= 5000)
+countries_4 <- countries_4 %>%
+  filter(!(index %in% no_bootcamp$index))
+
+# remove all the respondents who spent three months or less in programming from when they completed the survey
+three_months_or_less <- countries_4 %>%
+  filter(CountryLive == "United States of America" &
+           MonthsProgramming <= 3 &
+           money_per_month >= 5000)
+countries_4 <- countries_4 %>%
+  filter(!(index %in% three_months_or_less$index))
+```
+
+```{r}
+# generate a new boxplot that shows the distribution of the money_per_month variable
+ggplot(data = countries_4,
+       aes(x = CountryLive, y = money_per_month, fill = CountryLive)) +
+  geom_boxplot() +
+  labs(
+    title = "money_per_month distribution",
+    x = "Country",
+    y = "Money spent per month"
+  )
+```
+
+Looking again at the boxplot above we can also see extreme outliers for Canada. At least one participant who spends more than $5000 per month. Let's take a lookat these outliers.
+
+```{r}
+# filter the countries_4 dataframe to isolate the values of money_per_month higher than 4500 for Canada
+canada_only <- countries_4 %>%
+  filter(CountryLive == "Canada" &
+           money_per_month >= 4500 &
+           MonthsProgramming <= 3)
+
+# display the result
+head(canada_only)
+```
+
+The participant started programming for only two months when he completed the survey. He spent a high amount of money in the beginning to enroll in a bootcamp and didn't probably pay anything after that. We will remove this outlier.
+
+```{r}
+# remove the outlier for Canada
+countries_4 <- countries_4 %>%
+  filter(!(index %in% canada_only$index))
+```
+
+
+Now that the extreme outliers are removed, we will compute again the average money spent by each student per month for each of the four countries and display the final boxplot.
+
+
+```{r}
+# recalculate the mean value for the money_per_month column and display the final boxplot
+avg_countries_2 <- countries_4 %>%
+  group_by(CountryLive) %>%
+  summarize(avg_money = mean(money_per_month)) %>%
+  arrange(desc(avg_money))
+
+# display the avg_countries_2 table
+head(avg_countries_2)
+```
+
+```{r}
+# display the final boxplot
+ggplot(data = countries_4,
+       aes(x = CountryLive, y = money_per_month, fill = CountryLive)) +
+  geom_boxplot() +
+  labs(
+    title = "money_per_month distribution",
+    x = "Country",
+    y = "Money spent per month"
+  )
+```
+
+**Insights:**
+
+Considering the results we found so far, one good market worth advertising in is the US market. This is because there are a lot of coders living there and they are willing to spend high amounts of money to take the company's courses ($130 on average).
+The second best market seems to be Canada. However, we have almost twice as more potential customers in India than in Canada, so let's take a second look at India before taking Canada as our second best choice.
+
+```{r}
+# create a frequency distribution table for the CountryLive column
+frequency_table <- countries_4 %>%
+  group_by(CountryLive) %>%
+  summarize(Freq = n(),
+            Proportion = Freq / nrow(countries_4),
+            Percentage = Freq / nrow(countries_4) * 100) %>%
+  arrange(desc(Freq))
+
+# display the frequency table
+frequency_table
+```
+
+**Insights:**
+
+The results indicate that it is not clear if the second best choice is Canada or India. Although we can choose Canada as our best second choice there are many situations where India could be a better choice than Canada considering the number of customers in India. 
+
+So at this point, we can probably have three options for our advertising strategy:
+
+1. Advertise in the US, Canada, and India by splitting the budget unequally into three sub-budgets with the US having the largest marketing budget. For example: 60% for the US, 20% for India and 20% for Canada.
+2. Advertise in the US, and Canada by splitting the budget unequally into two sub-budgets with the US having the largest marketing budget. For example: 70% for the US, 30% for Canada.
+3. Advertise in the US, and India by splitting the budget unequally into two sub-budgets with the US having the largest marketing budget. For example: 70% for the US, 30% for India.
+
+**Conclusion:**
+
+In this project, we analyzed survey data from new coders to find the best markets to advertise in. The only solid conclusion we reached is that the US would be a good market to advertise in.  
+For the second best market, it wasn't clear-cut what country is the better choice between Canada and India. 
+
